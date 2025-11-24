@@ -51,50 +51,45 @@ function escapeCsv(value) {
   return needsQuoting ? `"${escaped}"` : escaped;
 }
 
-function buildRow(parsedJson) {
-  const row = {
+function buildRowsFromJson(parsedJson) {
+  const baseRow = {
     id: toStringValue(parsedJson?.id),
     timestamp: toStringValue(parsedJson?.timestamp),
     url: toStringValue(parsedJson?.url),
   };
 
   if (!Array.isArray(parsedJson?.data)) {
-    return row;
+    return [baseRow];
   }
 
-  parsedJson.data
+  const dataRows = parsedJson.data
     .filter((item) => item && typeof item === "object" && !Array.isArray(item))
-    .forEach((item, index) => {
+    .map((item) => {
+      const row = { ...baseRow };
       const keys = Object.keys(item);
       const urlKey = keys.find((key) => key.toLowerCase() === "url");
       const urlValue = urlKey ? toStringValue(item[urlKey]) : "";
       const dataKeys = keys.filter((key) => key !== urlKey);
 
       if (dataKeys.length === 0 && urlValue) {
-        const fallbackUrlKey = `URL_${index + 1}`;
-        if (!row[fallbackUrlKey]) {
-          row[fallbackUrlKey] = urlValue;
-        }
-        return;
+        row.URL = urlValue;
+        return row;
       }
 
       dataKeys.forEach((key) => {
         const columnKey = key.trim();
-        const columnValue = toStringValue(item[key]);
-        if (columnKey && !row[columnKey]) {
-          row[columnKey] = columnValue;
-        }
-
+        if (!columnKey) return;
+        row[columnKey] = toStringValue(item[key]);
         if (urlValue) {
-          const pairedUrlKey = `${columnKey}_URL`;
-          if (!row[pairedUrlKey]) {
-            row[pairedUrlKey] = urlValue;
-          }
+          row[`${columnKey}_URL`] = urlValue;
         }
       });
-    });
 
-  return row;
+      return row;
+    })
+    .filter(Boolean);
+
+  return dataRows.length ? dataRows : [baseRow];
 }
 
 function buildColumns(rows) {
@@ -141,7 +136,7 @@ async function main() {
     try {
       const raw = await fs.readFile(filePath, "utf-8");
       const parsed = JSON.parse(raw);
-      rows.push(buildRow(parsed));
+      rows.push(...buildRowsFromJson(parsed));
     } catch (error) {
       console.error(`Failed to process ${filePath}: ${error.message}`);
     }
